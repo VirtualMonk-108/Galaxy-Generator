@@ -6,7 +6,7 @@ import GUI from 'lil-gui'
  * Base
  */
 // Debug
-const gui = new GUI()
+const gui = new GUI({closed: true})
 
 // Canvas
 const canvas = document.querySelector('canvas.webgl')
@@ -14,17 +14,47 @@ const canvas = document.querySelector('canvas.webgl')
 // Scene
 const scene = new THREE.Scene()
 
+// Fragment Shader
+const fragmentShader = `
+varying vec3 vertexColor;
+
+void main() {
+    gl_FragColor = vec4(vertexColor, 1.0);
+}
+`;
+
+
+// Vertex shader
+const vertexShader = `
+uniform float time;
+varying vec3 vertexColor;
+
+void main() {
+    vec3 transformedPosition = position;
+    vertexColor = color;
+
+    float angle = time * 0.2;
+    transformedPosition.x = cos(angle) * position.x - sin(angle) * position.z;
+    transformedPosition.z = sin(angle) * position.x + cos(angle) * position.z;
+
+    vec4 modelViewPosition = modelViewMatrix * vec4(transformedPosition, 1.0);
+    gl_Position = projectionMatrix * modelViewPosition;
+    gl_PointSize = 2.0; // or use your 'parameters.size' uniform
+}
+`;
+
+
 /**
  * Galaxy
  */
 const parameters = {}
-parameters.count = 100000
+parameters.count = 65000
 parameters.size = 0.02
-parameters.radius = 5
-parameters.branches = 3
+parameters.radius = 10
+parameters.branches = 5
 parameters.spin = 1
-parameters.randomness = 0.2
-parameters.randomnessPower = 3
+parameters.randomness = 0.8
+parameters.randomnessPower = 7
 parameters.insideColor = '#ff6030'
 parameters.outsideColor = '#1b3984'
 
@@ -32,60 +62,63 @@ let geometry = null
 let material = null
 let points = null
 
-const generateGalaxy = () =>
-{
- geometry = new THREE.BufferGeometry()
-const positions = new Float32Array(parameters.count * 3)
-const colors = new Float32Array(parameters.count * 3)
+const generateGalaxy = () => {
+    geometry = new THREE.BufferGeometry()
+    const positions = new Float32Array(parameters.count * 3)
+    const colors = new Float32Array(parameters.count * 3)
 
-const insideColor = new THREE.Color(parameters.insideColor)
-const outsideColor = new THREE.Color(parameters.outsideColor)
+    const insideColor = new THREE.Color(parameters.insideColor)
+    const outsideColor = new THREE.Color(parameters.outsideColor)
 
 
-for(let i = 0; i < parameters.count; i++)
-{
-    if(points !== null) {
-        points.geometry.dispose()
-        points.material.dispose()
-        scene.remove(points)
+    for (let i = 0; i < parameters.count; i++) {
+        if (points !== null) {
+            points.geometry.dispose()
+            points.material.dispose()
+            scene.remove(points)
+        }
+
+        const radius = Math.random() * parameters.radius
+        const branchAngle = (i % parameters.branches) / parameters.branches * Math.PI * 2
+        const spinAngle = radius * parameters.spin
+
+        const randomX = Math.pow(Math.random(), parameters.randomnessPower) * (Math.random() < 0.5 ? 1 : -1) * parameters.randomness * radius
+        const randomY = Math.pow(Math.random(), parameters.randomnessPower) * (Math.random() < 0.5 ? 1 : -1) * parameters.randomness * radius
+        const randomZ = Math.pow(Math.random(), parameters.randomnessPower) * (Math.random() < 0.5 ? 1 : -1) * parameters.randomness * radius
+
+        const i3 = i * 3
+
+        positions[i3 + 0] = Math.cos(branchAngle + spinAngle) * radius + randomX
+        positions[i3 + 1] = randomY
+        positions[i3 + 2] = Math.sin(branchAngle + spinAngle) * radius + randomZ
+
+        // Color
+        const mixedColor = insideColor.clone()
+        mixedColor.lerp(outsideColor, radius / parameters.radius)
+
+        colors[i3] = mixedColor.r
+        colors[i3 + 1] = mixedColor.g
+        colors[i3 + 2] = mixedColor.b
+
     }
-
-    const radius = Math.random() * parameters.radius
-    const branchAngle = (i % parameters.branches) / parameters.branches * Math.PI * 2
-    const spinAngle = radius * parameters.spin
-
-    const randomX = Math.pow(Math.random(), parameters.randomnessPower) * (Math.random() < 0.5 ? 1 : -1) * parameters.randomness * radius
-    const randomY = Math.pow(Math.random(), parameters.randomnessPower) * (Math.random() < 0.5 ? 1 : -1) * parameters.randomness * radius
-    const randomZ = Math.pow(Math.random(), parameters.randomnessPower) * (Math.random() < 0.5 ? 1 : -1) * parameters.randomness * radius
-
-    const i3 = i * 3
-
-    positions[i3 + 0] = Math.cos(branchAngle + spinAngle) * radius + randomX
-    positions[i3 + 1] = randomY
-    positions[i3 + 2] = Math.sin(branchAngle + spinAngle) * radius + randomZ
-
-    // Color
-    const mixedColor = insideColor.clone()
-    mixedColor.lerp(outsideColor, radius / parameters.radius)
-
-    colors[i3  ] = mixedColor.r
-    colors[i3 + 1] = mixedColor.g
-    colors[i3 + 2] = mixedColor.b
-
-}
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
     geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3))
 
-     material = new THREE.PointsMaterial({
+    material = new THREE.ShaderMaterial({
         size: parameters.size,
         sizeAttenuation: true,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
-        vertexColors: true
+        vertexColors: true,
+        vertexShader: vertexShader,
+        fragmentShader: fragmentShader,
+        uniforms: {
+            time: { value: 0 }
+        }
 
     })
 
-     points = new THREE.Points(geometry, material)
+    points = new THREE.Points(geometry, material)
     scene.add(points)
 
 }
@@ -113,8 +146,7 @@ const sizes = {
     height: window.innerHeight
 }
 
-window.addEventListener('resize', () =>
-{
+window.addEventListener('resize', () => {
     // Update sizes
     sizes.width = window.innerWidth
     sizes.height = window.innerHeight
@@ -133,9 +165,9 @@ window.addEventListener('resize', () =>
  */
 // Base camera
 const camera = new THREE.PerspectiveCamera(75, sizes.width / sizes.height, 0.1, 100)
-camera.position.x = 3
-camera.position.y = 3
-camera.position.z = 3
+camera.position.x = 0
+camera.position.y = 8
+camera.position.z = 12
 scene.add(camera)
 
 // Controls
@@ -156,9 +188,11 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
  */
 const clock = new THREE.Clock()
 
-const tick = () =>
-{
+const tick = () => {
     const elapsedTime = clock.getElapsedTime()
+
+    // Update the time uniform
+    material.uniforms.time.value = elapsedTime;
 
     // Update controls
     controls.update()
