@@ -13,4 +13,10 @@ npm run dev
 
 # Build for production in the dist/ directory
 npm run build
+
+# Checkout the live link
+https://yauvans-galaxy.vercel.app/
+
 ```
+
+
